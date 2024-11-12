@@ -10,4 +10,4 @@ Link to the paper and algorithm: https://ccrma.stanford.edu/~dattorro/EffectDesi
 - Low-Pass Filter [] -
 - Delay Lines [] - 
 
-
+Perhaps try to implement positions into the node for reverb
