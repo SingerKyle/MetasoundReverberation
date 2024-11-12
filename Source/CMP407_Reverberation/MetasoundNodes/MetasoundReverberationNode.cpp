@@ -45,7 +45,7 @@ namespace Metasound
 		METASOUND_PARAM(InParamDecayDiffusion_2, "Decay Diffusion 2", "Delay Value for all pass filter 2.") // clamp between 0 and 1
 
 		// Damping 
-		METASOUND_PARAM(InParamDelayLength, "Delay Damping", ".") // clamp between 0 and 1
+		METASOUND_PARAM(InParamDelayDamping, "Delay Damping", ".") // clamp between 0 and 1
 
 		// Excursion rate and depth 
 		METASOUND_PARAM(InParamExcursionRate, "Excursion Rate", ".") // clamp between 0 - 16?
@@ -88,22 +88,22 @@ namespace Metasound
 			// Audio Input Buffer
 			const FAudioBufferReadRef& InAudioInput,
 			// Input Processing
-			const FFloatReadRef& PreDelayTime,
-			const FFloatReadRef& PreLowPassFilter,
-			const FFloatReadRef& LowPassCutoff,
-			const FFloatReadRef& InputDiffusion1,
-			const FFloatReadRef& InputDiffusion2,
+			const FFloatReadRef& InPreDelayTime,
+			const FFloatReadRef& InPreLowPassFilter,
+			const FFloatReadRef& InLowPassCutoff,
+			const FFloatReadRef& InInputDiffusion1,
+			const FFloatReadRef& InInputDiffusion2,
 			// Feedback Tail
-			const FFloatReadRef& DecayRate,
-			const FFloatReadRef& DecayDiffusion1,
-			const FFloatReadRef& DecayDiffusion2,
-			const FFloatReadRef& DecayDamping,
-			const FFloatReadRef& ExcursionRate,
-			const FFloatReadRef& ExcursionDepth,
-			const FFloatReadRef& WetValue,
-			const FFloatReadRef& DryValue,
+			const FFloatReadRef& InDecayRate,
+			const FFloatReadRef& InDecayDiffusion1,
+			const FFloatReadRef& InDecayDiffusion2,
+			const FFloatReadRef& InDecayDamping,
+			const FFloatReadRef& InExcursionRate,
+			const FFloatReadRef& InExcursionDepth,
+			const FFloatReadRef& InWetValue,
+			const FFloatReadRef& InDryValue);
 			// Audio Output Buffer
-			const FFloatReadRef& InCutOff);
+			//const FFloatReadRef& InCutOff);
 
 		// Returns the inputs for the operator (usually audio data or control parameters).
 		virtual FDataReferenceCollection GetInputs() const override;
@@ -166,7 +166,7 @@ namespace Metasound
 		Audio::FExponentialEase CurrentDelayLength;
 		
 		// The previous pitch shift value
-		float CurrentPitchShift = 0.0f;
+		float CurrentPreDelay = 0.0f;
 
 		// The current phasor phase (goes between 0.0 and 1.0)
 		float PhasorPhase = 0.0f;
@@ -188,24 +188,47 @@ namespace Metasound
 	///
 	/// Summary
 	FReverberationOperator::FReverberationOperator(const FOperatorSettings& InSettings,
+		// Audio Input Buffer
 		const FAudioBufferReadRef& InAudioInput,
-		const FFloatReadRef& InPitchShift,
-		const FFloatReadRef& InDelayLength,
-		const FFloatReadRef& InCutOff)
+		// Input Processing
+		const FFloatReadRef& InPreDelayTime,
+		const FFloatReadRef& InPreLowPassFilter,
+		const FFloatReadRef& InLowPassCutoff,
+		const FFloatReadRef& InInputDiffusion1,
+		const FFloatReadRef& InInputDiffusion2,
+		// Feedback Tail
+		const FFloatReadRef& InDecayRate,
+		const FFloatReadRef& InDecayDiffusion1,
+		const FFloatReadRef& InDecayDiffusion2,
+		const FFloatReadRef& InDecayDamping,
+		const FFloatReadRef& InExcursionRate,
+		const FFloatReadRef& InExcursionDepth,
+		const FFloatReadRef& InWetValue,
+		const FFloatReadRef& InDryValue)
 
 		// CHANGE THIS
 		: AudioInput(InAudioInput)
-		, PitchShift(InPitchShift)
-		, DelayLength(InDelayLength)
-		, CutOffFrequency(InCutOff)
+		, PreDelayTime(InPreDelayTime)
+		, PreLowPassFilter(InPreLowPassFilter)
+		, LowPassCutoff(InLowPassCutoff)
+		, InputDiffusion1(InInputDiffusion1)
+		, InputDiffusion2(InInputDiffusion2)
+		, DecayRate(InDecayRate)
+		, DecayDiffusion1(InDecayDiffusion1)
+		, DecayDiffusion2(InDecayDiffusion2)
+		, DecayDamping(InDecayDamping)
+		, ExcursionRate(InExcursionRate)
+		, ExcursionDepth(InExcursionDepth)
+		, WetValue(InWetValue)
+		, DryValue(InDryValue)
 		, AudioOutput(FAudioBufferWriteRef::CreateNew(InSettings))
 		, SampleRate(InSettings.GetSampleRate())
 	{
 		// Initialize the delay buffer with the initial delay length 
-		CurrentDelayLength.Init(GetDelayLengthClamped());
-		DelayBuffer.Init(InSettings.GetSampleRate(), 0.001f * Reverberate::MaxDelayLength);
-		CurrentPitchShift = GetPitchShiftClamped();
-		PhasorPhaseIncrement = GetPhasorPhaseIncrement();
+		//CurrentDelayLength.Init(GetDelayLengthClamped());
+		//DelayBuffer.Init(InSettings.GetSampleRate(), 0.001f * Reverberate::MaxDelayLength);
+		CurrentPreDelay = GetPreDelayClamped();
+		//PhasorPhaseIncrement = GetPhasorPhaseIncrement();
 	}
 
 	// The getter utility functions simply utilize the constants defined in the parameter section earlier.
@@ -228,7 +251,7 @@ namespace Metasound
 	/// which as mentioned before, is the amount of phase to increment each time a sample is rendered. 
 	///
 	/// Summary
-	float FReverberationOperator::GetPhasorPhaseIncrement() const
+/*	float FReverberationOperator::GetPhasorPhaseIncrement() const
 	{
 		// Derived from the following formula for doppler shift using a phasor
 		// FrequencyOut = FrequencyIn * (1.0 - PhasorFrequency * DurationSeconds)
@@ -237,17 +260,30 @@ namespace Metasound
 		const float PitchShiftRatio = Audio::GetFrequencyMultiplier(CurrentPitchShift);
 		const float PhasorFrequency =  (1.0f - PitchShiftRatio) / (0.001f * CurrentDelayLength.PeekCurrentValue());
 		return PhasorFrequency / SampleRate;
-	}
+	}*/
 	
 	FDataReferenceCollection FReverberationOperator::GetInputs() const
 	{
 		using namespace Reverberate;
 
 		FDataReferenceCollection InputDataReferences;
+		// Audio Input Buffer
 		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamAudioInput), FAudioBufferReadRef(AudioInput));
-		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamPitchShift), FFloatReadRef(PitchShift));
-		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDelayLength), FFloatReadRef(DelayLength));
-		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InputCutOff), FFloatReadRef(CutOffFrequency));
+		// Inputs
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamPreDelay), FFloatReadRef(PreDelayTime));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamPreLPF), FFloatReadRef(PreLowPassFilter));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamLowPassCutOff), FFloatReadRef(LowPassCutoff));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamPreDiffuse_1), FFloatReadRef(InputDiffusion1));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamPreDiffuse_2), FFloatReadRef(InputDiffusion2));
+		// Feedback
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDecayRate), FFloatReadRef(DecayRate));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDecayDiffusion_1), FFloatReadRef(DecayDiffusion1));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDecayDiffusion_2), FFloatReadRef(DecayDiffusion2));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDelayDamping), FFloatReadRef(DecayDamping));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamExcursionRate), FFloatReadRef(ExcursionRate));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamExcursionDepth), FFloatReadRef(ExcursionDepth));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamWetValue), FFloatReadRef(WetValue));
+		InputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(InParamDryValue), FFloatReadRef(DryValue));
 
 		return InputDataReferences;
 	}
@@ -309,9 +345,23 @@ namespace Metasound
 		static const FVertexInterface Interface(
 			FInputVertexInterface(
 				TInputDataVertex<FAudioBuffer>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamAudioInput)),
-				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPitchShift), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPreDelay), 0.0f),
 				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDelayLength), 30.0f),
-				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InputCutOff), 1500.0f)
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InputCutOff), 1500.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPreDelay), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPreLPF), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamLowPassCutOff), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPreDiffuse_1), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamPreDiffuse_2), 0.0f),
+
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDecayRate), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDecayDiffusion_1), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDecayDiffusion_2), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDelayDamping), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamExcursionRate), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamExcursionDepth), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamWetValue), 0.0f),
+				TInputDataVertex<float>(METASOUND_GET_PARAM_NAME_AND_METADATA(InParamDryValue), 0.0f)
 			),
 			FOutputVertexInterface(
 				TOutputDataVertex<FAudioBuffer>(METASOUND_GET_PARAM_NAME_AND_METADATA(OutParamAudio))
@@ -362,11 +412,10 @@ namespace Metasound
 		const FInputVertexInterface& InputInterface = GetVertexInterface().GetInputInterface();
 
 		FAudioBufferReadRef AudioIn = InputCollection.GetDataReadReferenceOrConstruct<FAudioBuffer>(METASOUND_GET_PARAM_NAME(InParamAudioInput), InParams.OperatorSettings);
-		FFloatReadRef PitchShift = InputCollection.GetDataReadReferenceOrConstructWithVertexDefault<float>(InputInterface, METASOUND_GET_PARAM_NAME(InParamPitchShift), InParams.OperatorSettings);
-		FFloatReadRef DelayLength = InputCollection.GetDataReadReferenceOrConstructWithVertexDefault<float>(InputInterface, METASOUND_GET_PARAM_NAME(InParamDelayLength), InParams.OperatorSettings);
-		FFloatReadRef CutOff = InputCollection.GetDataReadReferenceOrConstructWithVertexDefault<float>(InputInterface, METASOUND_GET_PARAM_NAME(InputCutOff), InParams.OperatorSettings);
+		FFloatReadRef PreDelayTime = InputCollection.GetDataReadReferenceOrConstructWithVertexDefault<float>(InputInterface, METASOUND_GET_PARAM_NAME(InParamPreDelay), InParams.OperatorSettings);
+		FFloatReadRef PreLowPassFilter = InputCollection.GetDataReadReferenceOrConstructWithVertexDefault<float>(InputInterface, METASOUND_GET_PARAM_NAME(InParamPreLPF), InParams.OperatorSettings);
 
-		return MakeUnique<FReverberationOperator>(InParams.OperatorSettings, AudioIn, PitchShift, DelayLength, CutOff);
+		return MakeUnique<FReverberationOperator>(InParams.OperatorSettings, AudioIn, PreDelayTime, DelayLength, CutOff);
 	}
 
 	class FReverbNode : public FNodeFacade
