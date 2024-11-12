@@ -28,31 +28,32 @@ namespace Metasound
 		// -------------------- Input --------------------
 		METASOUND_PARAM(InParamAudioInput, "In", "Audio input.")
 		//PreDelay
-		METASOUND_PARAM(InParamPreDelay, "PreDelayTime", "Controls how long the pre delay is.")
+		METASOUND_PARAM(InParamPreDelay, "PreDelayTime", "Controls how long the pre delay is.") // Clamped between Min and Max PreDelay
 		// Pre Low Pass Filter
-		METASOUND_PARAM(InParamPreLPF, "Pre Low Pass Filter", "Controls intensity of pre low pass filter.")
-		METASOUND_PARAM(InputLowPassCutOff, "Low Pass CutOff", "Cut off frequency for low pass filter")
+		METASOUND_PARAM(InParamPreLPF, "Pre Low Pass Filter", "Controls intensity of pre low pass filter.") // Clamp Between 0 and 1.
+		METASOUND_PARAM(InParamLowPassCutOff, "Low Pass CutOff", "Cut off frequency for low pass filter") // Clamp Between 0 and 1.
 		// Pre Diffusion
-		METASOUND_PARAM(InParamAudioInput, "Input Diffusion 1", ".")
-		METASOUND_PARAM(InParamAudioInput, "Input Diffusion 2", ".")
+		METASOUND_PARAM(InParamPreDiffuse_1, "Input Diffusion 1", ".") // Clamp Between 0 and 1.
+		METASOUND_PARAM(InParamPreDiffuse_2, "Input Diffusion 2", ".") // Clamp Between 0 and 1.
 		
 		// -------------------- Feedback Tail --------------------
 		// Decay Rate
-
+		METASOUND_PARAM(InParamDecayRate, "Decay Rate", ".") // clamp between 0 and 1
 
 		// Decay Diffusion
-		METASOUND_PARAM(InParamDelayLength, "Decay Diffusion 1", "Delay Value for all pass filter 1.") 
-		METASOUND_PARAM(InParamDelayLength, "Decay Diffusion 2", "Delay Value for all pass filter 2.")
+		METASOUND_PARAM(InParamDecayDiffusion_1, "Decay Diffusion 1", "Delay Value for all pass filter 1.") // clamp between 0 and 1
+		METASOUND_PARAM(InParamDecayDiffusion_2, "Decay Diffusion 2", "Delay Value for all pass filter 2.") // clamp between 0 and 1
 
 		// Damping 
-		METASOUND_PARAM(InParamDelayLength, "Damping", ".")
+		METASOUND_PARAM(InParamDelayLength, "Delay Damping", ".") // clamp between 0 and 1
 
 		// Excursion rate and depth 
-
+		METASOUND_PARAM(InParamExcursionRate, "Excursion Rate", ".") // clamp between 0 - 16?
+		METASOUND_PARAM(InParamExcursionDepth, "Excursion Depth", ".") // clamp between 0 - 16?
 			
 		// Dry / Wet Values
-		METASOUND_PARAM(InputWetValue, "Wet Value", "How strong the reverberated sound is")
-		METASOUND_PARAM(InputDryValue, "Dry Value", "How strong the base sound is")
+		METASOUND_PARAM(InParamWetValue, "Wet Value", "How strong the reverberated sound is") // clamp between 0 and 1
+		METASOUND_PARAM(InParamDryValue, "Dry Value", "How strong the base sound is") // clamp between 0 and 1
 
 		
 		// -------------------- Outputs --------------------
@@ -60,7 +61,10 @@ namespace Metasound
 
 
 		// -------------------- Constant Variables --------------------
-
+		static constexpr float MinValue = 0.0f;
+		static constexpr float MaxValue = 1.0f;
+		static constexpr float MinPreDelay = 0.05f;
+		static constexpr float MaxPreDelay = 1000.f;
 	}
 
 	// Actual Class with all functions / variables etc.
@@ -81,9 +85,24 @@ namespace Metasound
 
 		// Constructor: Initialises the operator with settings and audio input data, including pitch shift and delay length.
 		FReverberationOperator(const FOperatorSettings& InSettings,
+			// Audio Input Buffer
 			const FAudioBufferReadRef& InAudioInput,
-			const FFloatReadRef& InPitchShift,
-			const FFloatReadRef& InDelayLength,
+			// Input Processing
+			const FFloatReadRef& PreDelayTime,
+			const FFloatReadRef& PreLowPassFilter,
+			const FFloatReadRef& LowPassCutoff,
+			const FFloatReadRef& InputDiffusion1,
+			const FFloatReadRef& InputDiffusion2,
+			// Feedback Tail
+			const FFloatReadRef& DecayRate,
+			const FFloatReadRef& DecayDiffusion1,
+			const FFloatReadRef& DecayDiffusion2,
+			const FFloatReadRef& DecayDamping,
+			const FFloatReadRef& ExcursionRate,
+			const FFloatReadRef& ExcursionDepth,
+			const FFloatReadRef& WetValue,
+			const FFloatReadRef& DryValue,
+			// Audio Output Buffer
 			const FFloatReadRef& InCutOff);
 
 		// Returns the inputs for the operator (usually audio data or control parameters).
@@ -99,7 +118,7 @@ namespace Metasound
 		void Execute();
 
 	private:
-		float GetPitchShiftClamped() const;
+		float GetPreDelayClamped() const;
 		float GetDelayLengthClamped() const;
 		float GetPhasorPhaseIncrement() const;
 		
@@ -120,10 +139,15 @@ namespace Metasound
 
 		// -------------------- Feedback Tail --------------------
 
+		FFloatReadRef DecayRate;
+
 		FFloatReadRef DecayDiffusion1;
 		FFloatReadRef DecayDiffusion2;
 
 		FFloatReadRef DecayDamping;
+
+		FFloatReadRef ExcursionRate;
+		FFloatReadRef ExcursionDepth;
 
 		FFloatReadRef WetValue;
 		FFloatReadRef DryValue;
@@ -133,7 +157,7 @@ namespace Metasound
 		FAudioBufferWriteRef AudioOutput;
 
 		// The internal delay buffer
-		Audio::FDelay DelayBuffer;
+		//Audio::FDelay DelayBuffer;
 
 		// The sample rate of the node
 		float SampleRate = 0.0f;
@@ -185,15 +209,17 @@ namespace Metasound
 	}
 
 	// The getter utility functions simply utilize the constants defined in the parameter section earlier.
-	
-	float FReverberationOperator::GetPitchShiftClamped() const
+	// 
+	// Setup getters for getting clamped values for each input.
+
+	float FReverberationOperator::GetPreDelayClamped() const
 	{ 
-		return FMath::Clamp(*PitchShift, -12.0f * Reverberate::MaxAbsPitchShiftInOctaves, 12.0f * Reverberate::MaxAbsPitchShiftInOctaves);
+		return FMath::Clamp(*PreDelayTime, Reverberate::MinPreDelay, 10.0f * Reverberate::MaxPreDelay);
 	}
 
 	float FReverberationOperator::GetDelayLengthClamped() const
 	{
-		return FMath::Clamp(*DelayLength, Reverberate::MinDelayLength, Reverberate::MaxDelayLength);
+		//return FMath::Clamp(*DelayLength, Reverberate::MinDelayLength, Reverberate::MaxDelayLength);
 	}
 
 	/// Summary
@@ -263,65 +289,9 @@ namespace Metasound
 		return 1.f;
 	}
 
-		void FReverberationOperator::Execute()
+	void FReverberationOperator::Execute()
 	{
-		const float NewDelayLengthClamped = GetDelayLengthClamped();
-		bool bRecomputePhasorIncrement = (!FMath::IsNearlyEqual(NewDelayLengthClamped, CurrentDelayLength.GetNextValue()));
-
-		// Update the pitch shift data if it's changed
-		const float NewPitchShiftClamped = GetPitchShiftClamped();
-		bRecomputePhasorIncrement |=!FMath::IsNearlyEqual(NewPitchShiftClamped, CurrentPitchShift);
-
-		if (bRecomputePhasorIncrement)
-		{
-			CurrentDelayLength.SetValue(NewDelayLengthClamped);
-			CurrentPitchShift = NewPitchShiftClamped;
-			PhasorPhaseIncrement = GetPhasorPhaseIncrement();
-		}
-
-		// The const-only input audio data
-		const float* InputAudio = AudioInput->GetData();
-
-		// The writable output audio data
-		float* OutputAudio = AudioOutput->GetData();
-
-		// The number of frames we're rendering this block
-		const int32 NumFrames = AudioInput->Num();
-
-		for (int32 FrameIndex = 0; FrameIndex < NumFrames; ++FrameIndex)
-		{
-			// Update the interpolated delay length value
-			if (!CurrentDelayLength.IsDone())
-			{
-				PhasorPhaseIncrement = GetPhasorPhaseIncrement();
-				CurrentDelayLength.GetNextValue();
-			}
 		
-			// Compute the two tap delay read locations, one shifted 90 degrees out of phase
-			const float PhasorPhaseOffset = FMath::Fmod(PhasorPhase + 0.5f, 1.0f);
-			const float DelayTapRead1 = CurrentDelayLength.PeekCurrentValue() * PhasorPhase;
-			const float DelayTapRead2 = CurrentDelayLength.PeekCurrentValue() * PhasorPhaseOffset;
-
-			// This produces an overlapping cosine function that avoids pops in the output
-			const float DelayTapGain1 = FMath::Cos(PI * (PhasorPhase - 0.5f));
-			const float DelayTapGain2 = FMath::Cos(PI * (PhasorPhaseOffset - 0.5f));
-			
-			// Read the delay lines at the given tap indices, apply the gains
-			const float Sample1 = DelayTapGain1 * DelayBuffer.ReadDelayAt(DelayTapRead1);
-			const float Sample2 = DelayTapGain2 * DelayBuffer.ReadDelayAt(DelayTapRead2);
-
-			// Sum the outputs into the output frame
-			const float OutputSample = Sample1 + Sample2;
-			OutputAudio[FrameIndex] = OutputSample;
-
-			// Update the phasor state
-			PhasorPhase += PhasorPhaseIncrement;
-			// Make sure we wrap to between 0.0 and 1.0 after incrementing the phase 
-			PhasorPhase = FMath::Wrap(PhasorPhase, 0.0f, 1.0f);
-
-			// Write the output to the delay buffer
-			DelayBuffer.WriteDelayAndInc(InputAudio[FrameIndex]);
-		}
 	}
 
 	/// Summary
@@ -360,8 +330,8 @@ namespace Metasound
 			Info.ClassName = { StandardNodes::Namespace, "Reverb", StandardNodes::AudioVariant };
 			Info.MajorVersion = 1;
 			Info.MinorVersion = 1;
-			Info.DisplayName = METASOUND_LOCTEXT("DelayNode_DisplayName", "Reverb");
-			Info.Description = METASOUND_LOCTEXT("DelayNode_Description", "Pitch shifts the audio buffer using a doppler shift method.");
+			Info.DisplayName = METASOUND_LOCTEXT("ReverbNode_DisplayName", "Dattorro Reverberation");
+			Info.Description = METASOUND_LOCTEXT("ReverbNode_Description", "Reverberates the Audio Input.");
 			Info.Author = PluginAuthor;
 			Info.PromptIfMissing = PluginNodeMissingPrompt;
 			Info.DefaultInterface = GetVertexInterface();
