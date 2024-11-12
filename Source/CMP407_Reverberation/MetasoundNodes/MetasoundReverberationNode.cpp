@@ -25,18 +25,48 @@ namespace Metasound
 	namespace Reverberate
 	{
 		// METASOUND_PARAM: Variable Name - Node Name - Node Description.
+		// -------------------- Input --------------------
 		METASOUND_PARAM(InParamAudioInput, "In", "Audio input.")
-		METASOUND_PARAM(InParamPitchShift, "Pitch Shift", "The amount to pitch shift the audio signal, in semitones.")
-		METASOUND_PARAM(InputCutOff, "Cut Off", "Cut off frequency")
-		METASOUND_PARAM(InParamDelayLength, "Delay Length", "The delay length of the internal delay buffer in milliseconds (10 ms to 100 ms). Changing this can reduce artifacts in certain pitch shift regions.")
+		//PreDelay
+		METASOUND_PARAM(InParamPreDelay, "PreDelayTime", "Controls how long the pre delay is.")
+		// Pre Low Pass Filter
+		METASOUND_PARAM(InParamPreLPF, "Pre Low Pass Filter", "Controls intensity of pre low pass filter.")
+		METASOUND_PARAM(InputLowPassCutOff, "Low Pass CutOff", "Cut off frequency for low pass filter")
+		// Pre Diffusion
+		METASOUND_PARAM(InParamAudioInput, "Input Diffusion 1", ".")
+		METASOUND_PARAM(InParamAudioInput, "Input Diffusion 2", ".")
+		
+		// -------------------- Feedback Tail --------------------
+		// Decay Rate
+
+
+		// Decay Diffusion
+		METASOUND_PARAM(InParamDelayLength, "Decay Diffusion 1", "Delay Value for all pass filter 1.") 
+		METASOUND_PARAM(InParamDelayLength, "Decay Diffusion 2", "Delay Value for all pass filter 2.")
+
+		// Damping 
+		METASOUND_PARAM(InParamDelayLength, "Damping", ".")
+
+		// Excursion rate and depth 
+
+			
+		// Dry / Wet Values
+		METASOUND_PARAM(InputWetValue, "Wet Value", "How strong the reverberated sound is")
+		METASOUND_PARAM(InputDryValue, "Dry Value", "How strong the base sound is")
+
+		
+		// -------------------- Outputs --------------------
 		METASOUND_PARAM(OutParamAudio, "Out", "Audio output.")
 
-		static constexpr float MinDelayLength = 10.0f;
-		static constexpr float MaxDelayLength = 100.0f;
-		static constexpr float MaxAbsPitchShiftInOctaves = 6.0f;
+
+		// -------------------- Constant Variables --------------------
+
 	}
 
 	// Actual Class with all functions / variables etc.
+	/// 
+	/// FFloatReadRef - Inputs
+	/// FFloatWriteRef - Outputs
 	class FReverberationOperator : public TExecutableOperator<FReverberationOperator>
 	{
 	public:
@@ -73,18 +103,33 @@ namespace Metasound
 		float GetDelayLengthClamped() const;
 		float GetPhasorPhaseIncrement() const;
 		
-		// The input audio buffer
+		// -------------------- Audio Input Buffer --------------------
+		
 		FAudioBufferReadRef AudioInput;
 
-		// The user-defined pitch shift in semitones
-		FFloatReadRef PitchShift;
+		// -------------------- Input Processing --------------------
 
-		// The user-defined delay length (in milliseconds) of the internal delay buffer
-		FFloatReadRef DelayLength;
+		FFloatReadRef PreDelayTime;
 
-		FFloatReadRef CutOffFrequency;
+		FFloatReadRef PreLowPassFilter;
 
-		// The audio output
+		FFloatReadRef LowPassCutoff;
+
+		FFloatReadRef InputDiffusion1;
+		FFloatReadRef InputDiffusion2;
+
+		// -------------------- Feedback Tail --------------------
+
+		FFloatReadRef DecayDiffusion1;
+		FFloatReadRef DecayDiffusion2;
+
+		FFloatReadRef DecayDamping;
+
+		FFloatReadRef WetValue;
+		FFloatReadRef DryValue;
+
+		// -------------------- Audio Output Buffer --------------------
+		
 		FAudioBufferWriteRef AudioOutput;
 
 		// The internal delay buffer
