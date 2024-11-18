@@ -10,6 +10,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -19,13 +20,24 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 ACMP407_ReverberationCharacter::ACMP407_ReverberationCharacter()
 {
 	// Set size for collision capsule
-	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
-		
+	GetCapsuleComponent()->InitCapsuleSize(35.f, 96.0f);
+
+	// Create Spring Arm
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("Camera Spring Arm"));
+	SpringArm->SetupAttachment(GetCapsuleComponent());
+	SpringArm->TargetArmLength = 0;
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bUsePawnControlRotation = true;
+	SpringArm->bEnableCameraLag = true;
+	SpringArm->CameraLagSpeed = 10.f;
+	SpringArm->bEnableCameraRotationLag = true;
+	SpringArm->CameraRotationLagSpeed = 25.f;
+	
 	// Create a CameraComponent	
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCameraComponent->SetupAttachment(GetCapsuleComponent());
+	FirstPersonCameraComponent->SetupAttachment(SpringArm);
 	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
-	FirstPersonCameraComponent->bUsePawnControlRotation = true;
+	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
@@ -36,12 +48,14 @@ ACMP407_ReverberationCharacter::ACMP407_ReverberationCharacter()
 	//Mesh1P->SetRelativeRotation(FRotator(0.9f, -19.19f, 5.2f));
 	Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
 
+	GetCharacterMovement()->MaxWalkSpeed = 150.f;
 }
 
 void ACMP407_ReverberationCharacter::BeginPlay()
 {
 	// Call the base class  
 	Super::BeginPlay();
+	
 }
 
 //////////////////////////////////////////////////////////////////////////// Input
@@ -60,6 +74,10 @@ void ACMP407_ReverberationCharacter::SetupPlayerInputComponent(UInputComponent* 
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACMP407_ReverberationCharacter::Look);
+
+		// Sprinting
+		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ACMP407_ReverberationCharacter::Sprint);
+		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ACMP407_ReverberationCharacter::EndSprint);
 	}
 	else
 	{
@@ -92,4 +110,14 @@ void ACMP407_ReverberationCharacter::Look(const FInputActionValue& Value)
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
 	}
+}
+
+void ACMP407_ReverberationCharacter::Sprint()
+{
+	GetCharacterMovement()->MaxWalkSpeed = 300.f; // add variables
+}
+
+void ACMP407_ReverberationCharacter::EndSprint()
+{
+	GetCharacterMovement()->MaxWalkSpeed = 150.f; // add variables
 }

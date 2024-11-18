@@ -1,5 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+#include "DetailLayoutBuilder.h"
 #include "Internationalization/Text.h"
 #include "MetasoundExecutableOperator.h"
 #include "MetasoundNodeRegistrationMacro.h"
@@ -15,10 +16,9 @@
 #include "MetasoundFacade.h"
 #include "DSP/Dsp.h"
 #include "DSP/Filter.h"
-#include "DSP/InterpolatedOnePole.h"
-#include "DSP/Delay.h"
+#include "DSP/AllPassFilter.h"
 
-#define LOCTEXT_NAMESPACE "MetasoundStandardNodesDattorroReverberation"
+#define LOCTEXT_NAMESPACE "MetasoundStandardNodesReverberation"
 
 namespace Metasound
 {
@@ -111,13 +111,18 @@ namespace Metasound
     
 		// Returns the outputs of the operator (usually processed audio data).
 		virtual FDataReferenceCollection GetOutputs() const override;
-    
+
+		//
+		float PreDelay(float InputSignal, float DelayTime, float SamplingRate);
 		// Low Pass Filter
-		float LowPassFilter();
+		void LowPassFilter();
+
+		// All Pass Filter
+		void AllPassFilter();
 
 		// Executes the pitch shifting operation, modifying the audio data based on the inputs.
 		void Execute();
-
+		
 	private:
 		float GetPreDelayClamped() const;
 		float GetDelayLengthClamped() const;
@@ -158,7 +163,7 @@ namespace Metasound
 		FAudioBufferWriteRef AudioOutput;
 
 		// The internal delay buffer
-		//Audio::FDelay DelayBuffer;
+		Audio::FDelay DelayBuffer;
 
 		// The sample rate of the node
 		float SampleRate = 0.0f;
@@ -176,10 +181,13 @@ namespace Metasound
 		float PhasorPhaseIncrement = 0.0f;
 
 		// Low Pass Filter:
-		Audio::FStateVariableFilter VariableFilter;
+		Audio::FStateVariableFilter LPVariableFilter;
+		Audio::FStateVariableFilter APVariableFilter;
 		float PreviousFrequency{ -1.f };
 		float PreviousResonance{ -1.f };
 		float PreviousBandStopControl{ -1.f };
+		
+		int32 BufferIndex = 0;
 	};
 
 	/// Summary
@@ -227,9 +235,18 @@ namespace Metasound
 	{
 		// Initialize the delay buffer with the initial delay length 
 		//CurrentDelayLength.Init(GetDelayLengthClamped());
-		//DelayBuffer.Init(InSettings.GetSampleRate(), 0.001f * Reverberate::MaxDelayLength);
 		CurrentPreDelay = GetPreDelayClamped();
 		//PhasorPhaseIncrement = GetPhasorPhaseIncrement();
+
+		SampleRate = InSettings.GetSampleRate();
+		DelayBuffer.Init(InSettings.GetSampleRate(), 0.001f * *PreDelayTime);
+		BufferIndex = 0; // Start buffer index at 0
+
+		LPVariableFilter.Init(SampleRate, 1);
+		LPVariableFilter.SetFilterType(Audio::EFilter::LowPass);
+
+		APVariableFilter.Init(SampleRate, 1);
+		APVariableFilter.SetFilterType(Audio::EFilter::BandPass);
 	}
 
 	// The getter utility functions simply utilize the constants defined in the parameter section earlier.
@@ -298,36 +315,135 @@ namespace Metasound
 		OutputDataReferences.AddDataReadReference(METASOUND_GET_PARAM_NAME(OutParamAudio), FAudioBufferReadRef(AudioOutput));
 		return OutputDataReferences;
 	}
-
-	float FReverberationOperator::LowPassFilter()
+	
+	void FReverberationOperator::LowPassFilter()
 	{
-		// Code below taken from MetasoundBasicFilters.cpp
-		static const float CurrentFrequency = FMath::Clamp(*LowPassCutoff, 0.f, (0.5f * SampleRate));
-		constexpr float CurrentResonance = FMath::Clamp(0.f, 0.f, 10.f);
-		constexpr float CurrentBandStopControl = FMath::Clamp(0.f, 0.f, 1.f);
-		
-		if (bool bNeedsUpdate =
+		//Code below taken from MetasoundBasicFilters.cpp
+		const float CurrentFrequency = FMath::Clamp(*LowPassCutoff, 0.f, (0.5f * SampleRate));
+		const float CurrentResonance = FMath::Clamp(0.f, 0.f, 10.f);
+		const float CurrentBandStopControl = FMath::Clamp(0.f, 0.f, 1.f);
+
+		bool bNeedsUpdate =
 			(!FMath::IsNearlyEqual(PreviousFrequency, CurrentFrequency))
 			|| (!FMath::IsNearlyEqual(PreviousResonance, CurrentResonance))
-			|| (!FMath::IsNearlyEqual(PreviousBandStopControl, CurrentBandStopControl)))
-		{
-			VariableFilter.SetQ(CurrentResonance);
-			VariableFilter.SetFrequency(CurrentFrequency);
-			VariableFilter.SetBandStopControl(CurrentBandStopControl);
+			|| (!FMath::IsNearlyEqual(PreviousBandStopControl, CurrentBandStopControl));
 
-			VariableFilter.Update();
+		if (bNeedsUpdate)
+		{
+			LPVariableFilter.SetQ(*PreLowPassFilter);
+			LPVariableFilter.SetFrequency(CurrentFrequency);
+			LPVariableFilter.SetBandStopControl(CurrentBandStopControl);
+
+			LPVariableFilter.Update();
 
 			PreviousFrequency = CurrentFrequency;
 			PreviousResonance = CurrentResonance;
 			PreviousBandStopControl = CurrentBandStopControl;
 		}
+	}
 
-		return 1.f;
+	void FReverberationOperator::AllPassFilter()
+	{
+		// The cutoff frequency for the all-pass filter, which will define the phase shift behavior
+		const float CurrentFrequency = FMath::Clamp(*InputDiffusion1, 0.f, (0.5f * SampleRate));
+		const float CurrentResonance = FMath::Clamp(0.f, 0.f, 10.f); // Resonance typically controls the filter's sharpness or behavior
+		const float CurrentBandStopControl = FMath::Clamp(0.f, 0.f, 1.f); // This might not be relevant for all-pass, but kept for consistency
+
+		// Check if any filter parameters have changed
+		bool bNeedsUpdate =
+			(!FMath::IsNearlyEqual(PreviousFrequency, CurrentFrequency)) ||
+			(!FMath::IsNearlyEqual(PreviousResonance, CurrentResonance)) ||
+			(!FMath::IsNearlyEqual(PreviousBandStopControl, CurrentBandStopControl));
+
+		if (bNeedsUpdate)
+		{
+			// Set up the filter parameters
+			APVariableFilter.SetQ(CurrentResonance);  // Resonance factor (similar to other filters)
+			APVariableFilter.SetFrequency(CurrentFrequency);  // Cutoff frequency
+			APVariableFilter.SetBandStopControl(CurrentBandStopControl);  // Optional, used in band-stop filters but can be ignored for all-pass
+
+			// Apply the filter updates
+			APVariableFilter.Update();
+
+			// Save the current parameter values for comparison on next update
+			PreviousFrequency = CurrentFrequency;
+			PreviousResonance = CurrentResonance;
+			PreviousBandStopControl = CurrentBandStopControl;
+		}
 	}
 
 	void FReverberationOperator::Execute()
 	{
 		
+		/*LowPassFilter();
+		AllPassFilter();
+		APVariableFilter.ProcessAudio(AudioInput->GetData(), AudioInput->Num(), AudioOutput->GetData());*/
+
+		// Step 1: Process the unmodified signal through the all-pass filter.
+		const float* InputAudio = AudioInput->GetData();
+		float* OutputAudio = AudioOutput->GetData();
+		const int32 NumFrames = AudioInput->Num();
+
+		// Step 2 Apply PreDelay
+		const float DelayLength = *PreDelayTime;
+
+		if (bool bDelayCheck = (!FMath::IsNearlyEqual(DelayLength, CurrentDelayLength.GetNextValue())))
+		{
+			//UE_LOG(LogTemp, Log, TEXT("Set Value to PreDelayTime: %.3f"), DelayLength);
+			CurrentDelayLength.SetValue(DelayLength);
+		}
+		
+		// Step 3 apply Low Pass
+		LowPassFilter();
+
+		// Array for low pass output.
+		TArray<float> LowPassAudio;
+		LowPassAudio.SetNumUninitialized(NumFrames);
+
+		// Store low pass filter result.
+		LPVariableFilter.ProcessAudio(AudioInput->GetData(), NumFrames, LowPassAudio.GetData());
+
+		// Step 4 mix original and low pass
+		for (int32 FrameIndex = 0; FrameIndex < NumFrames; FrameIndex++)
+		{
+			// Update the interpolated delay length value
+			if (!CurrentDelayLength.IsDone())
+			{
+				CurrentDelayLength.GetNextValue();
+				//UE_LOG(LogTemp, Log, TEXT("Updated Delay Length for Frame %d"), FrameIndex);
+			}
+
+			// read delay value - can add onto the current value to increment the taps
+			const float DelayTapRead1 = CurrentDelayLength.PeekCurrentValue();
+			const float DelayTapRead2 = CurrentDelayLength.PeekCurrentValue();
+
+			// Log the delay taps for each frame
+			//UE_LOG(LogTemp, Log, TEXT("Frame %d - DelayTapRead1: %.3f, DelayTapRead2: %.3f"), FrameIndex, DelayTapRead1, DelayTapRead2);
+			
+			// Read the delay lines at the given tap indices, apply the gains
+			const float Sample1 = DelayBuffer.ReadDelayAt(DelayTapRead1);
+			const float Sample2 = DelayBuffer.ReadDelayAt(DelayTapRead2);
+
+			//UE_LOG(LogTemp, Log, TEXT("Frame %d - Sample1: %.3f, Sample2: %.3f"), FrameIndex, Sample1, Sample2);
+			
+			// The delayed signal, mixing the two delay taps
+			const float DelayedSample = Sample1 + Sample2;
+			
+			// Mix the original (InputAudio) with the all-pass processed audio
+			const float OriginalSample = InputAudio[FrameIndex];
+			const float ProcessedSample = LowPassAudio[FrameIndex];
+
+			// You can change the mixing ratio if needed, e.g., (Original + Processed) * 0.5f
+			//OutputAudio[FrameIndex] = (OriginalSample + DelayedSample) * 0.5f;
+			//UE_LOG(LogTemp, Log, TEXT("Frame %d - OutputAudio: %.3f"), FrameIndex, OutputAudio[FrameIndex]);
+
+			const float MixedSample = (OriginalSample * *DryValue) + (DelayedSample * *WetValue);
+
+			OutputAudio[FrameIndex] = MixedSample;
+			
+			// Write the new sample to the delay buffer (for future delay reads)
+			DelayBuffer.WriteDelayAndInc((ProcessedSample));
+		}
 	}
 
 	/// Summary

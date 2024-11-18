@@ -1,0 +1,36 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Dattorro Reverb Metasound Plugin",
+	"Description": "A metasound node for Dattorro Reverb",
+	"Category": "Audio",
+	"CreatedBy": "Kyle Singer",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "DattorroReverbMetasound",
+			"Type": "Runtime",
+			"LoadingPhase": "PreLoadingScreen"
+		}
+	],
+
+	"Plugins": [
+
+		{
+
+			"Name": "Metasound",
+
+			"Enabled": true
+
+		}
+
+	]
+}
