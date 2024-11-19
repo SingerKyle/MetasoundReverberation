@@ -425,6 +425,7 @@ namespace Metasound
 			
 			// Read the delay lines at the given tap indices, apply the gains
 			const float Sample1 = DelayBuffer.ReadDelayAt(DelayTapRead1);
+			// if Delay tap 2 less than 0, add sample size
 			const float Sample2 = DelayBuffer.ReadDelayAt(DelayTapRead2);
 
 			//UE_LOG(LogTemp, Log, TEXT("Frame %d - Sample1: %.3f, Sample2: %.3f"), FrameIndex, Sample1, Sample2);
