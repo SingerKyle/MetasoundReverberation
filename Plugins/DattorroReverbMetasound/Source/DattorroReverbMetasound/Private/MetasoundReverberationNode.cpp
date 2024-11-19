@@ -35,7 +35,7 @@ namespace Metasound
 		// Pre Diffusion - 
 		METASOUND_PARAM(InParamPreDiffuse_1, "Input Diffusion 1", ".") // Clamp Between 0 and 1.
 		METASOUND_PARAM(InParamPreDiffuse_2, "Input Diffusion 2", ".") // Clamp Between 0 and 1.
-		
+			
 		// -------------------- Feedback Tail --------------------
 		// Decay Rate
 		METASOUND_PARAM(InParamDecayRate, "Decay Rate", ".") // clamp between 0 and 1
@@ -383,6 +383,9 @@ namespace Metasound
 		const float* InputAudio = AudioInput->GetData();
 		float* OutputAudio = AudioOutput->GetData();
 		const int32 NumFrames = AudioInput->Num();
+
+		// MS = (S/SR) * 1000 - calculation
+		float Millisecond = (NumFrames * SampleRate) * 1000;
 
 		// Step 2 Apply PreDelay
 		const float DelayLength = *PreDelayTime;
