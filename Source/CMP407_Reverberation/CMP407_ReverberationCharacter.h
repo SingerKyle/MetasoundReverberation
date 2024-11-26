@@ -52,6 +52,7 @@ public:
 protected:
 	virtual void BeginPlay();
 
+	virtual void Tick(float DeltaSeconds) override;
 public:
 		
 	/** Look Input Action */
@@ -64,7 +65,7 @@ protected:
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
-
+	
 	void Sprint();
 	void EndSprint();
 

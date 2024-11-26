@@ -82,6 +82,7 @@ bool UTP_WeaponComponent::AttachWeapon(ACMP407_ReverberationCharacter* TargetCha
 
 	// add the weapon as an instance component to the character
 	Character->AddInstanceComponent(this);
+	Character->GetMesh1P()->SetVisibility(true);
 
 	// Set up action bindings
 	if (APlayerController* PlayerController = Cast<APlayerController>(Character->GetController()))

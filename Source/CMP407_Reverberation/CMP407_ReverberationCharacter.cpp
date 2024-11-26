@@ -58,6 +58,25 @@ void ACMP407_ReverberationCharacter::BeginPlay()
 	
 }
 
+void ACMP407_ReverberationCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if(GetMovementComponent()->IsMovingOnGround())
+	{
+		const FVector Start = GetActorLocation();
+		FVector End = Start + (FVector(0,0,-GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+		float radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+
+		FHitResult Outhit;
+
+		if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius)))
+		{
+			
+		}
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////// Input
 
 void ACMP407_ReverberationCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
