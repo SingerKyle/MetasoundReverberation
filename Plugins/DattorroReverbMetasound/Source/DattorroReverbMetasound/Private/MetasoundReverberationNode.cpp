@@ -35,7 +35,7 @@ namespace Metasound
 		METASOUND_PARAM(InParamAllPassCutOff, "All Pass Cutoff", ".")
 		METASOUND_PARAM(InParamPreDiffuse_1, "Input Diffusion 1", ".") // Clamp Between 0 and 1.
 		METASOUND_PARAM(InParamPreDiffuse_2, "Input Diffusion 2", ".") // Clamp Between 0 and 1.
-		
+			
 		// -------------------- Feedback Tail --------------------
 		// Decay Rate
 		METASOUND_PARAM(InParamDecayRate, "Decay Rate", ".") // clamp between 0 and 1
@@ -402,8 +402,7 @@ namespace Metasound
 		const float* InputAudio = AudioInput->GetData();
 		float* OutputAudio = AudioOutput->GetData();
 		const int32 NumFrames = AudioInput->Num();
-
-		// Apply PreDelay
+ 
 		const float DelayLength = *PreDelayTime;
 		
 		if (bool bDelayCheck = (!FMath::IsNearlyEqual(DelayLength, CurrentDelayLength.GetNextValue())))
@@ -461,6 +460,7 @@ namespace Metasound
 
 			// Read the delay lines at the given tap indices, apply the gains
 			const float Sample1 = DelayBuffer.ReadDelayAt(DelayTapRead1);
+			// if Delay tap 2 less than 0, add sample size
 			const float Sample2 = DelayBuffer.ReadDelayAt(DelayTapRead2);
 			//const float Sample2 = DattorroAllPassFilters[0].ReadDelayAt(DelayTapRead2);
 			
