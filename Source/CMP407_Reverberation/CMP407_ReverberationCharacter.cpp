@@ -69,10 +69,23 @@ void ACMP407_ReverberationCharacter::Tick(float DeltaSeconds)
 		float radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
 
 		FHitResult Outhit;
+		FCollisionQueryParams Params;
+		Params.bReturnPhysicalMaterial = true;
 
-		if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius)))
+		if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius), Params))
 		{
-			
+			switch (Outhit.PhysMaterial->SurfaceType)
+			{
+			case EPhysicalSurface::SurfaceType1:
+
+				break;
+			case EPhysicalSurface::SurfaceType2:
+
+				break;
+			default:
+				
+				break;
+			}
 		}
 	}
 }
