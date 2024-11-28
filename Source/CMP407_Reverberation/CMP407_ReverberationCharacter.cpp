@@ -11,6 +11,7 @@
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -19,6 +20,8 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 ACMP407_ReverberationCharacter::ACMP407_ReverberationCharacter()
 {
+	PrimaryActorTick.bCanEverTick = true;
+	
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 96.0f);
 
@@ -49,43 +52,116 @@ ACMP407_ReverberationCharacter::ACMP407_ReverberationCharacter()
 	Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
 
 	GetCharacterMovement()->MaxWalkSpeed = 150.f;
+
+	WalkSounds_Planet = CreateDefaultSubobject<USoundBase>(TEXT("Planet WalkSounds"));
+	WalkSounds_Ship = CreateDefaultSubobject<USoundBase>(TEXT("Ship WalkSounds"));
+
+	RunSounds_Planet = CreateDefaultSubobject<USoundBase>(TEXT("Planet RunSounds"));
+	RunSounds_Ship = CreateDefaultSubobject<USoundBase>(TEXT("Ship RunSounds"));
+	
+	LandSounds_Planet = CreateDefaultSubobject<USoundBase>(TEXT("Planet LandSounds"));
+	LandSounds_Ship = CreateDefaultSubobject<USoundBase>(TEXT("Ship LandSounds"));
+
+	
+	
 }
 
 void ACMP407_ReverberationCharacter::BeginPlay()
 {
 	// Call the base class  
 	Super::BeginPlay();
+
 	
+	if (WalkCurveFloat)
+	{
+		//GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("Meow"));
+
+		WalkTimeline.SetLooping(false); // Prevent infinite looping
+		WalkTimeline.SetTimelineLength(0.5f); // Set total duration
+		WalkTimeline.SetTimelineLengthMode(ETimelineLengthMode::TL_LastKeyFrame);
+		
+		
+		// Bind to finish event
+		FOnTimelineEvent TimelineEvent;
+		TimelineEvent.BindUFunction(this, FName("TryFootstep"));
+		WalkTimeline.AddEvent(0.5f, TimelineEvent);
+	}
 }
 
-void ACMP407_ReverberationCharacter::Tick(float DeltaSeconds)
+void ACMP407_ReverberationCharacter::Tick(float DeltaTime)
 {
-	Super::Tick(DeltaSeconds);
-
-	if(GetMovementComponent()->IsMovingOnGround())
+	Super::Tick(DeltaTime);
+	
+	if (WalkTimeline.IsPlaying())
 	{
-		const FVector Start = GetActorLocation();
-		FVector End = Start + (FVector(0,0,-GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
-		float radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+		WalkTimeline.TickTimeline(DeltaTime);
+	}
 
-		FHitResult Outhit;
-		FCollisionQueryParams Params;
-		Params.bReturnPhysicalMaterial = true;
+	if(GetCharacterMovement()->Velocity.Length() <= 0)
+	{
+		WalkTimeline.Stop();
+	}
+}
 
-		if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius), Params))
+void ACMP407_ReverberationCharacter::TryFootstep()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("Try Step"));
+	
+	const FVector Start = GetActorLocation();
+	FVector End = Start + (FVector(0,0,-GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+	float radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+
+	FHitResult Outhit;
+	FCollisionQueryParams Params;
+	Params.bReturnPhysicalMaterial = true;
+
+	if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius), Params))
+	{
+		switch (Outhit.PhysMaterial->SurfaceType)
 		{
-			switch (Outhit.PhysMaterial->SurfaceType)
-			{
-			case EPhysicalSurface::SurfaceType1:
+		case EPhysicalSurface::SurfaceType1: // Metal
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(), WalkSounds_Ship, Outhit.Location, 1, 1);
+			break;
+		case EPhysicalSurface::SurfaceType2: // Planet
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(), WalkSounds_Planet, Outhit.Location, 1, 1);
+			break;
+		default:
+            				
+			break;
+		}
 
-				break;
-			case EPhysicalSurface::SurfaceType2:
+		//WalkTimeline.Stop();
+	}
+}
 
-				break;
-			default:
+void ACMP407_ReverberationCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	const FVector Start = GetActorLocation();
+	FVector End = Start + (FVector(0,0,-GetCapsuleComponent()->GetScaledCapsuleHalfHeight() * 2));
+	float radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+
+	FHitResult Outhit;
+	FCollisionQueryParams Params;
+	Params.bReturnPhysicalMaterial = true;
+
+	if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius), Params))
+	{
+		DrawDebugSphere(GetWorld(), Start, radius, 12, FColor::Orange, false, 5.0f);
+		DrawDebugSphere(GetWorld(), End, radius, 12, FColor::Red, false, 5.0f);
+		
+		switch (Outhit.PhysMaterial->SurfaceType)
+		{
+		case EPhysicalSurface::SurfaceType1: // Metal
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(), LandSounds_Ship, Outhit.Location, 1, 1);
+			break;
+		case EPhysicalSurface::SurfaceType2: // Planet
+			UGameplayStatics::PlaySoundAtLocation(GetWorld(), LandSounds_Planet, Outhit.Location, 1, 1);
+			break;
+		default:
 				
-				break;
-			}
+			break;
 		}
 	}
 }
@@ -123,6 +199,23 @@ void ACMP407_ReverberationCharacter::Move(const FInputActionValue& Value)
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
+	if(GetCharacterMovement()->Velocity.Length() > 0)
+	{
+		if (!WalkTimeline.IsPlaying())
+		{
+			WalkTimeline.PlayFromStart(); // Start the timeline from the beginning
+			UE_LOG(LogTemp, Warning, TEXT("Timeline started."));
+		}	
+	}
+	else
+	{
+		if (WalkTimeline.IsPlaying())
+		{
+			WalkTimeline.Stop();
+		}
+	}
+	
+	
 	if (Controller != nullptr)
 	{
 		// add movement 
