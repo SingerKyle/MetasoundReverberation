@@ -207,18 +207,20 @@ namespace Metasound
 
 		// Delay lengths for Dattorro AllPass in samples (e.g., 142, 379, 107, 277)
 		TArray<int32> DelayLengths = {142, 379, 107, 277};
-		
-		Audio::FBiquadFilter APFilter;
-		//Audio::FAllPassFractionalDelay;
+
+		// Feedback Tail
 
 		TArray<Audio::FDelayAPF> DattorroAllPassFilters;
 		Audio::FDelayAPF DecayDiffusionFilter1;
 		Audio::FDelayAPF DecayDiffusionFilter2;
-		//Audio::FDynamicDelayAPF;
 
-		// Feedback Tail
+		// Delay
+		Audio::FDelay FeedbackDelay;
+		
 		Audio::FStateVariableFilter LPDampingFilter;
 		
+		// Used to sum the feedback into the reverb
+
 		int32 BufferIndex = 0;
 	};
 
@@ -269,8 +271,6 @@ namespace Metasound
 	{
 		// Initialize the delay buffer with the initial delay length 
 		CurrentDelayLength.Init(GetDelayLengthClamped());
-		//CurrentPreDelay = GetPreDelayClamped();
-		//PhasorPhaseIncrement = GetPhasorPhaseIncrement();
 
 		SampleRate = InSettings.GetSampleRate();
 		DelayBuffer.Init(InSettings.GetSampleRate(), 0.001f * *PreDelayTime);
@@ -279,8 +279,6 @@ namespace Metasound
 		LPVariableFilter.Init(SampleRate, 1);
 		LPVariableFilter.SetFilterType(Audio::EFilter::LowPass);
 
-		APFilter.Init(SampleRate, 1, Audio::EBiquadFilter::AllPass);
-
 		DecayDiffusionFilter1.Init(SampleRate, 0.001f * *PreDelayTime);
 		DecayDiffusionFilter2.Init(SampleRate, 0.001f * *PreDelayTime);
 
@@ -288,8 +286,10 @@ namespace Metasound
 		for (int i = 0; i < DelayLengths.Num(); i++)
 		{
 			DattorroAllPassFilters[i] = Audio::FDelayAPF();
-			DattorroAllPassFilters[i].Init(SampleRate, 0.001f * *PreDelayTime);
+			DattorroAllPassFilters[i].Init(SampleRate);
 		}
+
+		FeedbackDelay.Init(SampleRate);
 
 		LPDampingFilter.Init(SampleRate, 1);
 		LPDampingFilter.SetFilterType(Audio::EFilter::LowPass);
@@ -372,6 +372,8 @@ namespace Metasound
 
 			LPVariableFilter.Update();
 
+			LPDampingFilter.SetFrequency(1 - *DecayDamping);
+
 			PreviousFrequency = CurrentFrequency;
 			PreviousResonance = CurrentResonance;
 			PreviousBandStopControl = CurrentBandStopControl;
@@ -391,6 +393,13 @@ namespace Metasound
 				DattorroAllPassFilters[i].SetG(i < 2 ? *InputDiffusion1 : *InputDiffusion2);
 				DattorroAllPassFilters[i].SetDelaySamples(DelayLengths[i]);
 			}
+
+			DecayDiffusionFilter1.SetG(*DecayDiffusion1);
+			DecayDiffusionFilter1.SetDelaySamples(672 + *ExcursionRate);
+
+			DecayDiffusionFilter2.SetG(*DecayDiffusion2);
+			DecayDiffusionFilter2.SetDelaySamples(1800);
+
 			PreviousAllPassFrequency = CurrentFrequency;
 			PreviousAllPassResonance = CurrentResonance;
 		}
@@ -427,14 +436,6 @@ namespace Metasound
 		// Setup storage for filtered audio
 		TArray<float> AllPassAudio;
 		AllPassAudio.SetNumUninitialized(NumFrames);
-
-		APFilter.SetEnabled(true);
-		// All Pass Filter - loop through all 4 filters
-		//for (int32 FilterIndex = 0; FilterIndex < 4; FilterIndex++)
-		//{
-			//UE_LOG(LogTemp, Log, TEXT("AllPass - %d"), FilterIndex);
-		//	APFilter.ProcessAudio(LowPassAudio.GetData(), NumFrames, AllPassAudio.GetData());
-		//}
 		
 		const float NewDelayLengthClamped = GetDelayLengthClamped();
 		bool bRecomputePhasorIncrement = (!FMath::IsNearlyEqual(NewDelayLengthClamped, CurrentDelayLength.GetNextValue()));
@@ -482,17 +483,43 @@ namespace Metasound
 			//OutputAudio[FrameIndex] = (OriginalSample + DelayedSample) * 0.5f;
 			//UE_LOG(LogTemp, Log, TEXT("Frame %d - OutputAudio: %.3f"), FrameIndex, OutputAudio[FrameIndex]);
 
-			float MixedSample = (OriginalSample * *DryValue) + (DelayedSample * *WetValue);// + (ProcessedSample * *WetValue);
-
 			
-			
-			OutputAudio[FrameIndex] = MixedSample;
 
 			// FEEDBACK TAIL!!
 
+			// Sum previous feedback if available
+
+			// All Pass 
+
+			float FeedbackSample = DecayDiffusionFilter1.ProcessAudioSample(DelayedSample);
+
+			// Delay
+
+			FeedbackDelay.SetDelaySamples(4453);
+			float NewFeedbackSample = FeedbackDelay.ProcessAudioSample(FeedbackSample);
+
+			// Low Pass
+
+			//float LowPassFeedbackSample;
+			//LPDampingFilter.ProcessAudioFrame(NewFeedbackSample, LowPassFeedbackSample);
+
+			// All Pass
 			
 
+
+			// Delay
+
+
+
+			// Sum feedback into current audio
 			
+			//float FinalSample = (OriginalSample * *DryValue) + (NewFeedbackSample * *WetValue);
+
+			// Output
+
+			float MixedSample = (OriginalSample * *DryValue) + (DelayedSample * *WetValue);// + (ProcessedSample * *WetValue);
+			OutputAudio[FrameIndex] = MixedSample;
+
 			// Write the new sample to the delay buffer (for future delay reads)
 			DelayBuffer.WriteDelayAndInc((ProcessedSample));
 
@@ -501,7 +528,7 @@ namespace Metasound
 				DattorroAllPassFilters[i].WriteDelayAndInc(ProcessedSample);
 			}
 			
-			//DattorroAllPassFilter.WriteDelayAndInc(ProcessedSample);
+			//FeedbackDelay.WriteDelayAndInc(ProcessedSample);
 		}
 	}
 
