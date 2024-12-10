@@ -34,6 +34,8 @@ void UTP_WeaponComponent::Fire()
 		UWorld* const World = GetWorld();
 		if (World != nullptr)
 		{
+
+			OnShoot.Broadcast();
 			APlayerController* PlayerController = Cast<APlayerController>(Character->GetController());
 			const FRotator SpawnRotation = PlayerController->PlayerCameraManager->GetCameraRotation();
 			// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
@@ -45,6 +47,7 @@ void UTP_WeaponComponent::Fire()
 	
 			// Spawn the projectile at the muzzle
 			World->SpawnActor<ACMP407_ReverberationProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, ActorSpawnParams);
+			
 		}
 	}
 	

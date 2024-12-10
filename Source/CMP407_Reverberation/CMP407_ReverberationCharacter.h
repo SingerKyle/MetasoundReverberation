@@ -19,6 +19,8 @@ struct FInputActionValue;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLandDelegate);
+
 UCLASS(config=Game)
 class ACMP407_ReverberationCharacter : public ACharacter
 {
@@ -75,6 +77,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction;
 
+	UPROPERTY(BlueprintAssignable)
+	FLandDelegate OnLand;
 protected:
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);

@@ -148,6 +148,8 @@ void ACMP407_ReverberationCharacter::Landed(const FHitResult& Hit)
 
 	if(GetWorld()->SweepSingleByChannel(Outhit, Start, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(radius), Params))
 	{
+		OnLand.Broadcast();
+		
 		DrawDebugSphere(GetWorld(), Start, radius, 12, FColor::Orange, false, 5.0f);
 		DrawDebugSphere(GetWorld(), End, radius, 12, FColor::Red, false, 5.0f);
 		
