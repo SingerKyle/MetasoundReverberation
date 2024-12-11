@@ -220,8 +220,12 @@ namespace Metasound
 		Audio::FDelay FeedbackDelayRight;
 		// The delay for the right side
 		Audio::FExponentialEase FeedbackDelayEaseRight;		
+
+		// Variable for calculation 1 - damping value
+		float DampingMultiplicationValue;
 		
 		Audio::FStateVariableFilter LPDampingFilter;
+		
 		
 		// Used to sum the feedback into the reverb
 
@@ -280,6 +284,7 @@ namespace Metasound
 		
 		SampleRate = InSettings.GetSampleRate();
 		DelayBuffer.Init(InSettings.GetSampleRate(), (0.001f * *PreDelayTime));
+		DelayBuffer.SetDelaySamples(*PreDelayTime);
 		BufferIndex = 0; // Start buffer index at 0
 
 		LPVariableFilter.Init(SampleRate, 1);
@@ -295,6 +300,7 @@ namespace Metasound
 		// Set buffer to be delay size
 		InitialiseFeedbackParameters();
 
+		DampingMultiplicationValue = (1 - *DecayDamping);
 		LPDampingFilter.Init(SampleRate, 1);
 		LPDampingFilter.SetFilterType(Audio::EFilter::LowPass);
 	}
@@ -346,9 +352,12 @@ namespace Metasound
 
 	float FReverberationOperator::GetPhasorPhaseIncrement() const
 	{
-		const float PhasorFrequency = 1.0f / (CurrentDelayLength.PeekCurrentValue()); // Phasor frequency is based on delay length
-		return PhasorFrequency / SampleRate; // Normalize by sample rate
-
+		const float DelayLength = CurrentDelayLength.PeekCurrentValue();    // Delay length in seconds
+		const float PhasorFrequency = 1.0f / DelayLength;                  // Frequency = 1 / Delay length
+		const float PhaseIncrement = PhasorFrequency / SampleRate;         // Normalize by sample rate
+    
+		//UE_LOG(LogTemp, Log, TEXT("PhasorIncrement: %.6f"), PhaseIncrement);
+		return PhaseIncrement;
 	}
 
 
@@ -367,7 +376,7 @@ namespace Metasound
 			
 			LPVariableFilter.Update();
 
-			LPDampingFilter.SetFrequency(1 - *DecayDamping);
+			LPDampingFilter.SetFrequency(*DecayDamping);
 			LPDampingFilter.SetQ(1);
 			LPVariableFilter.SetBandStopControl(CurrentBandStopControl);
 
@@ -400,25 +409,30 @@ namespace Metasound
 
 	void FReverberationOperator::InitialiseFeedbackParameters()
 	{
-		FeedbackDelayLeft.Init(SampleRate, 0.001f * 4453);
-		FeedbackDelayEaseLeft.Init(4453);
-		FeedbackDelayRight.Init(SampleRate, 0.001f * 4217);
-		FeedbackDelayEaseRight.Init(4217);
-
+		const float LeftSampleDelay = (*PreDelayTime + 555);
+		const float RightSampleDelay = (*PreDelayTime + 233);
+		
+		// make custom delay variables?
+		// Left Feedback Delay
+		FeedbackDelayLeft.Init(SampleRate, 0.001f * LeftSampleDelay);
+		FeedbackDelayLeft.SetDelaySamples(LeftSampleDelay); // Feedback delay time
+		FeedbackDelayEaseLeft.Init(LeftSampleDelay);
+		FeedbackDelayEaseLeft.SetValue(LeftSampleDelay);
+		// Right Feedback Delay
+		FeedbackDelayRight.Init(SampleRate, 0.001f * RightSampleDelay);
+		FeedbackDelayRight.SetDelaySamples(RightSampleDelay); // Feedback delay time
+		FeedbackDelayEaseRight.Init(RightSampleDelay);
+		FeedbackDelayEaseRight.SetValue(RightSampleDelay);
 		
 		// set delay sample rate for delay nodes
-		PostLPFFeedbackDelayLeft.Init(SampleRate);
-		PostLPFFeedbackDelayLeft.SetDelaySamples(3720);
-		PostLPFFeedbackDelayRight.Init(SampleRate);
-		PostLPFFeedbackDelayRight.SetDelaySamples(3163);
+		const float LeftSampleFinalDelay = *PreDelayTime + 700;
+		const float RightSampleFinalDelay = *PreDelayTime + 400;
 		
-		FeedbackDelayLeft.SetDelaySamples(4453); // Feedback delay time
-		FeedbackDelayEaseLeft.SetValue(4453);
-			
-		FeedbackDelayRight.SetDelaySamples(4217); // Feedback delay time
-		FeedbackDelayEaseRight.SetValue(4217);
-			
-	
+		PostLPFFeedbackDelayLeft.Init(SampleRate);
+		PostLPFFeedbackDelayLeft.SetDelaySamples(LeftSampleFinalDelay);
+		PostLPFFeedbackDelayRight.Init(SampleRate);
+		PostLPFFeedbackDelayRight.SetDelaySamples(RightSampleFinalDelay);
+		
 		
 		// Set delay for All Pass Filters in Feedback tail
 
@@ -441,6 +455,8 @@ namespace Metasound
 
 	void FReverberationOperator::WriteDelaysAndInc(float ProcessedSample, float FeedbackSampleLeft, float FeedbackSampleRight)
 	{
+		//UE_LOG(LogTemp, Log, TEXT("ProcessedSample: %.2f, FeedbackLeft: %.2f, FeedbackRight: %.2f"), ProcessedSample, FeedbackSampleLeft, FeedbackSampleRight);
+		
 		// Write the new sample to the delay buffer (for future delay reads)
 		DelayBuffer.WriteDelayAndInc((ProcessedSample));
 
@@ -448,14 +464,19 @@ namespace Metasound
 		{
 			DattorroAllPassFilters[i].WriteDelayAndInc(ProcessedSample);
 		}
-			
-		FeedbackDelayLeft.WriteDelayAndInc(ProcessedSample);
-		FeedbackDelayRight.WriteDelayAndInc(ProcessedSample);
+
+		// Currently having processedsample here makes it work - need to figure out how to make the other feedback delay work??
+		FeedbackDelayLeft.WriteDelayAndInc(FeedbackSampleRight );
+		FeedbackDelayRight.WriteDelayAndInc(FeedbackSampleLeft );
 
 		DecayDiffusionFilter1Left.WriteDelayAndInc(FeedbackSampleRight);
 		DecayDiffusionFilter2Left.WriteDelayAndInc(FeedbackSampleRight);
 		DecayDiffusionFilter1Right.WriteDelayAndInc(FeedbackSampleLeft);
 		DecayDiffusionFilter2Right.WriteDelayAndInc(FeedbackSampleLeft);
+
+		// write to final delay
+		PostLPFFeedbackDelayLeft.WriteDelayAndInc(FeedbackSampleRight);
+		PostLPFFeedbackDelayRight.WriteDelayAndInc(FeedbackSampleLeft);
 	}
 
 	void FReverberationOperator::Execute()
@@ -464,12 +485,14 @@ namespace Metasound
 		const float* InputAudio = AudioInput->GetData();
 		float* OutputAudio = AudioOutput->GetData();
 		const int32 NumFrames = AudioInput->Num();
- 
+
+		DampingMultiplicationValue = (1 - *DecayDamping);
+		const float DecayRateVariable = *DecayRate;
 		const float DelayLength = *PreDelayTime;
 		
 		if (bool bDelayCheck = (!FMath::IsNearlyEqual(DelayLength, CurrentDelayLength.GetNextValue())))
 		{
-			UE_LOG(LogTemp, Log, TEXT("Set Value to PreDelayTime: %.3f"), DelayLength);
+			//UE_LOG(LogTemp, Log, TEXT("Set Value to PreDelayTime: %.3f"), DelayLength);
 			CurrentDelayLength.SetValue(DelayLength);
 		}
 		
@@ -479,9 +502,16 @@ namespace Metasound
 		// Array for low pass output.
 		TArray<float> LowPassAudio;
 		LowPassAudio.SetNumUninitialized(NumFrames);
+
+		TArray<float> ScaledAudio;
+		ScaledAudio.SetNumUninitialized(NumFrames);
 		
 		// Store low pass filter result.
-		LPVariableFilter.ProcessAudio(AudioInput->GetData(), NumFrames, LowPassAudio.GetData());
+		for (int32 FrameIndex = 0; FrameIndex < NumFrames; FrameIndex++)
+		{
+			ScaledAudio[FrameIndex] = InputAudio[FrameIndex] * 0.9995f;
+		}
+		LPVariableFilter.ProcessAudio(ScaledAudio.GetData(), NumFrames, LowPassAudio.GetData());
 
 		// Setup All Pass
 		AllPassFilter();
@@ -490,7 +520,7 @@ namespace Metasound
 		bool bRecomputePhasorIncrement = (!FMath::IsNearlyEqual(NewDelayLengthClamped, CurrentDelayLength.GetNextValue()));
 		if (bRecomputePhasorIncrement)
 		{
-			UE_LOG(LogTemp, Log, TEXT("Set Value to PreDelayTime: %.3f"), CurrentDelayLength.PeekCurrentValue());
+			//UE_LOG(LogTemp, Log, TEXT("Set Value to PreDelayTime: %.3f"), CurrentDelayLength.PeekCurrentValue());
 			PhasorPhaseIncrement = GetPhasorPhaseIncrement(); 
 		}
 		
@@ -511,31 +541,30 @@ namespace Metasound
 				FeedbackDelayEaseRight.GetNextValue();
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("DelayBuffer: %.1f"), CurrentDelayLength.PeekCurrentValue());
+			// Process each audio sample through the all-pass filter
+			float TestProcessedSample = 0.0f;
+			float ProcessedSample = LowPassAudio[FrameIndex];
+			for (int i = 0; i < DelayLengths.Num(); i++)
+			{
+				 TestProcessedSample += DattorroAllPassFilters[i].ProcessAudioSample(ProcessedSample);
+			}
+
+			ProcessedSample = TestProcessedSample;
+			
+			//UE_LOG(LogTemp, Log, TEXT("DelayBuffer: %.1f"), CurrentDelayLength.PeekCurrentValue());
 
 			const float PhasorReadPosition = CurrentDelayLength.PeekCurrentValue(); // Get the current phase position from the phasor
 			//UE_LOG(LogTemp, Log, TEXT("DelayBuffer: %.6f"), PhasorReadPosition);
 			const float DelayTapRead1 = FMath::Max(PhasorReadPosition, 0.0f);						 // Phasor controls the first delay tap
-			const float DelayTapRead2 = PhasorReadPosition + PhasorPhaseIncrement;						 // The second tap, offset by the phasor increment
-			UE_LOG(LogTemp, Log, TEXT("Increment: %.1f"), PhasorPhaseIncrement);
+			// adding +0.4 sets the delay to start for some reason - FIGURE OUT WHY :)
+			const float DelayTapRead2 = FMath::Fmod(FMath::Max(PhasorReadPosition, 0.0f), DelayBuffer.GetDelayLengthSamples());						 // The second tap, offset by the phasor increment
+			//UE_LOG(LogTemp, Log, TEXT("Buffer Length: %.1f"), DelayBuffer.GetDelayLengthSamples());
 			
 			// Read the delay lines at the given tap indices, apply the gains
 			const float Sample1 = DelayBuffer.ReadDelayAt(DelayTapRead1);
 			// if Delay tap 2 less than 0, add sample size
 			const float Sample2 = DelayBuffer.ReadDelayAt(DelayTapRead2);
 			//const float Sample2 = DattorroAllPassFilters[0].ReadDelayAt(DelayTapRead2);
-			
-			// The delayed signal, mixing the two delay taps
-			const float DelayedSample = Sample1 + Sample2;
-			
-			// Mix the original (InputAudio) with the all-pass processed audio
-			const float OriginalSample = InputAudio[FrameIndex];
-			// Process each audio sample through the all-pass filter
-			float ProcessedSample = LowPassAudio[FrameIndex];
-			for (int i = 0; i < DelayLengths.Num(); i++)
-			{
-				ProcessedSample = DattorroAllPassFilters[i].ProcessAudioSample(ProcessedSample);
-			}
 
 			// Feedback Tail Code
 			
@@ -543,52 +572,82 @@ namespace Metasound
 			float FeedbackReadPosition = FeedbackDelayEaseLeft.PeekCurrentValue();
 
 			//UE_LOG(LogTemp, Log, TEXT("FeedbackSampleLeft1: %.1f"), FeedbackReadPosition);
-			
-			float FeedbackSampleLeft = FeedbackDelayLeft.ReadDelayAt(FeedbackReadPosition);
+
+			const float FeedbackSampleLeft = FeedbackDelayLeft.ReadDelayAt(FMath::Fmod(FMath::Max(FeedbackReadPosition, 0.0f), FeedbackDelayLeft.GetDelayLengthSamples()));	
 
 			//UE_LOG(LogTemp, Log, TEXT("FeedbackSampleLeft2: %.1f"), FeedbackSampleLeft);
 			
-			//FeedbackSampleLeft = DecayDiffusionFilter1Left.ProcessAudioSample(FeedbackSampleLeft);
-			//FeedbackSampleLeft = FeedbackDelayLeft.ProcessAudioSample(FeedbackSampleLeft);
+			float ProcessedFeedbackSampleLeft = ProcessedSample; // maybe added with the feedbacksample above once it's been processed once?
+			//UE_LOG(LogTemp, Log, TEXT("Sample Before Decay: %.1f"), ProcessedFeedbackSampleLeft);
+			ProcessedFeedbackSampleLeft = DecayDiffusionFilter1Left.ProcessAudioSample(ProcessedFeedbackSampleLeft);
+			//UE_LOG(LogTemp, Log, TEXT("Sample After Decay: %.1f"), ProcessedFeedbackSampleLeft);
+			//ProcessedFeedbackSampleLeft = FeedbackDelayLeft.ProcessAudioSample(FeedbackSampleLeft);
 
-			FeedbackSampleLeft *= *DecayRate; // DecayRate is clamped between 0 and 1
+			
+			
+			//UE_LOG(LogTemp, Log, TEXT("Sample After DecayRate: %.1f"), ProcessedFeedbackSampleLeft);
 			
 			// Low-pass filter (damping)
-			//float LowPassFeedbackSampleLeft = 0.0f;
-			//LPDampingFilter.ProcessAudioFrame(&FeedbackSampleLeft, &LowPassFeedbackSampleLeft);
-			
-			//FeedbackSampleLeft = DecayDiffusionFilter2Left.ProcessAudioSample(LowPassFeedbackSampleLeft);
+			ProcessedFeedbackSampleLeft *= DampingMultiplicationValue;
+			float LowPassFeedbackSampleLeft = 0.0f;
+			LPDampingFilter.ProcessAudioFrame(&ProcessedFeedbackSampleLeft, &LowPassFeedbackSampleLeft);
+			//UE_LOG(LogTemp, Log, TEXT("Sample After LPF: %.1f"), ProcessedFeedbackSampleLeft);
 
-			//FeedbackSampleLeft = PostLPFFeedbackDelayLeft.ProcessAudioSample(FeedbackSampleLeft);
+			// apply decay
+			ProcessedFeedbackSampleLeft *= DecayRateVariable;
+			
+			ProcessedFeedbackSampleLeft = DecayDiffusionFilter2Left.ProcessAudioSample(LowPassFeedbackSampleLeft);
+			//UE_LOG(LogTemp, Log, TEXT("Sample After Decay 2: %.1f"), ProcessedFeedbackSampleLeft);
+
+			const float LeftSampleFinalDelay = *PreDelayTime + 700;
+			const float FinalDelayPassLeft = PostLPFFeedbackDelayLeft.ReadDelayAt(LeftSampleFinalDelay);
 
 			// Right side of feedback tail
 			// Get the FeedbackReadPosition from the ease function
 			FeedbackReadPosition = FeedbackDelayEaseRight.PeekCurrentValue();
-			
-			float FeedbackSampleRight = FeedbackDelayRight.ReadDelayAt(FMath::Max(FeedbackReadPosition, 0.0f));
 
-			//UE_LOG(LogTemp, Log, TEXT("FeedbackSampleRight: %.6f"), FeedbackSampleRight);
-			
-			//FeedbackSampleRight = DecayDiffusionFilter1Right.ProcessAudioSample(FeedbackSampleRight);
-			//FeedbackSampleRight = FeedbackDelayRight.ProcessAudioSample(FeedbackSampleRight);
+			//UE_LOG(LogTemp, Log, TEXT("FeedbackSampleRight1: %.1f"), FeedbackReadPosition);
 
-			FeedbackSampleRight *= *DecayRate; // DecayRate is clamped between 0 and 1
+			const float FeedbackSampleRight = FeedbackDelayRight.ReadDelayAt(FMath::Fmod(FMath::Max(FeedbackReadPosition, 0.0f), FeedbackDelayRight.GetDelayLengthSamples()));	
+
+			//UE_LOG(LogTemp, Log, TEXT("FeedbackSampleRight2: %.1f"), FeedbackDelayRight.ReadDelayAt(FeedbackReadPosition));
+			
+			float ProcessedFeedbackSampleRight = ProcessedSample;
+			ProcessedFeedbackSampleRight = DecayDiffusionFilter1Right.ProcessAudioSample(ProcessedFeedbackSampleRight);
+			//ProcessedFeedbackSampleRight = FeedbackDelayRight.ProcessAudioSample(FeedbackSampleRight);
 			
 			// Low-pass filter (damping)
-			//float LowPassFeedbackSampleRight = 0.0f;
-			//LPDampingFilter.ProcessAudioFrame(&FeedbackSampleRight, &LowPassFeedbackSampleRight);
-			
-			//FeedbackSampleRight = DecayDiffusionFilter2Right.ProcessAudioSample(LowPassFeedbackSampleRight);
+			float LowPassFeedbackSampleRight = 0.0f;
+			ProcessedFeedbackSampleRight *= DampingMultiplicationValue;
+			LPDampingFilter.ProcessAudioFrame(&ProcessedFeedbackSampleRight, &LowPassFeedbackSampleRight);
 
-			//FeedbackSampleRight = PostLPFFeedbackDelayRight.ProcessAudioSample(FeedbackSampleRight);
+			// Decay
+			ProcessedFeedbackSampleRight *= DecayRateVariable;
+			
+			ProcessedFeedbackSampleRight = DecayDiffusionFilter2Right.ProcessAudioSample(LowPassFeedbackSampleRight);
+
+			const float RightSampleFinalDelay = *PreDelayTime + 400;
+			const float FinalDelayPassRight = PostLPFFeedbackDelayRight.ReadDelayAt(RightSampleFinalDelay);
 			
 			// Process Outputs
 
-			const float MixedSample = (OriginalSample * *DryValue) + (DelayedSample * *WetValue) + (FeedbackSampleLeft * *WetValue) + (FeedbackSampleRight * *WetValue);
-			//const float MixedSample = (OriginalSample * *DryValue) + (FeedbackSampleLeft * *WetValue) + (FeedbackSampleRight * *WetValue);
+			// Mix the original (InputAudio) with the all-pass processed audio
+			const float OriginalSample = InputAudio[FrameIndex];
+
+			// The delayed signal, mixing the two delay taps
+			const float DelayedSample = Sample1 + Sample2;
+			
+			const float MixedSample = (OriginalSample * *DryValue) 
+			+ (DelayedSample * *WetValue) 
+			+ (FeedbackSampleLeft * *WetValue) + (FeedbackSampleRight * *WetValue) 
+			+ (FinalDelayPassLeft * *WetValue) + (FinalDelayPassRight * *WetValue);
+			
+			//const float MixedSample = (OriginalSample * *DryValue)
+			//+ (FeedbackSampleLeft * *WetValue)//+ (FeedbackSampleRight * *WetValue);
+			// + (FinalDelayPassLeft * *WetValue) + (FinalDelayPassRight * *WetValue);
 			OutputAudio[FrameIndex] = MixedSample;
 
-			WriteDelaysAndInc(ProcessedSample, FeedbackSampleLeft, FeedbackSampleRight);
+			WriteDelaysAndInc(ProcessedSample, ProcessedFeedbackSampleLeft, ProcessedFeedbackSampleRight);
 		}
 	}
 
